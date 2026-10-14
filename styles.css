@@ -101,7 +101,7 @@ div.last { font-weight: 500; }
 .sets { margin-top: 6px; }
 .setrow { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .setrow.head { margin-top: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.setrow .n { width: 18px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }
+.setrow .n { width: 24px; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }
 .setrow .col { width: 126px; text-align: center; flex-shrink: 0; }
 .setrow .x { width: 14px; text-align: center; color: var(--muted); flex-shrink: 0; }
 .stepper { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--surface2); overflow: hidden; height: 44px; width: 126px; flex-shrink: 0; }
@@ -118,6 +118,27 @@ textarea.input { resize: none; line-height: 1.35; display: block; }
 .note { margin-top: 10px; }
 .pnotes { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .pnote { font-size: 13px; padding-left: 10px; border-left: 2px solid var(--border); }
+
+/* supersets */
+.tag { display: inline-block; min-width: 28px; padding: 2px 5px; border-radius: 6px; background: var(--surface2); color: var(--muted); font-size: 12px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.ss { border-left: 3px solid var(--accent); }
+.ss-head { display: flex; align-items: center; justify-content: space-between; margin: -6px 0 0; min-height: 32px; }
+.ss-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.ss-member { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.ss-member .tag { margin-top: 3px; }
+.ss-member.is-done .ex-name { color: var(--muted); }
+.ss .ex-name .hint { font-weight: 500; }
+.ss-indent { margin-left: 36px; width: auto; }
+.ss .last.ss-indent { margin: 6px 0 2px 36px; }
+.round-label { margin-top: 12px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.round-label:first-child { margin-top: 6px; }
+.ss .note { margin-top: 12px; }
+.solo-note { margin-top: 2px; font-size: 13px; }
+.linkbtn { border: 0; background: none; color: var(--accent); font-size: 13px; font-weight: 600; padding: 0; }
+.ss-box { border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0 4px; }
+.ss-caption { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); padding: 4px 0 2px; }
+.btn.icon.small { width: 36px; min-height: 36px; }
+.checkrow b { font-weight: 700; }
 
 /* program view */
 .block-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }

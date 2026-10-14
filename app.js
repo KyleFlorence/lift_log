@@ -6,7 +6,7 @@
 
 // ============================================================ constants
 const STORAGE_KEY = 'liftlog.v1';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const TYPE_LABEL = { lb: 'Weight', bw: 'BW', band: 'Band', time: 'Timed' };
 const TYPE_SHORT = { lb: 'lb', bw: 'bodyweight', band: 'band', time: 'timed' };
 const DEFAULTS = {
@@ -156,16 +156,41 @@ function knownExercises() {
   }
   return map;
 }
+const emptySet = () => ({ w: null, r: null, s: null, band: null });
 function newEntry(ex, cur) {
   const key = nameKey(ex.name);
   const last = lastPerformance(key, cur);
   const sets = [];
   for (let i = 0; i < ex.sets; i++) {
     const src = last ? (last.entry.sets[i] || last.entry.sets[last.entry.sets.length - 1]) : null;
-    sets.push(src ? { w: src.w ?? null, r: src.r ?? null, s: src.s ?? null, band: src.band ?? null } : { w: null, r: null, s: null, band: null });
+    sets.push(src ? { w: src.w ?? null, r: src.r ?? null, s: src.s ?? null, band: src.band ?? null } : emptySet());
   }
-  return { exerciseId: ex.id, name: ex.name, nameKey: key, type: ex.type, sets, note: '', done: false, touched: false };
+  return { exerciseId: ex.id, name: ex.name, nameKey: key, type: ex.type, linkAbove: !!ex.linkAbove, sets, note: '', done: false, touched: false };
 }
+// Supersets: an exercise with linkAbove joins the exercise above it. Consecutive links form one group.
+function dayGroups(exercises) {
+  const groups = [];
+  exercises.forEach((ex, i) => {
+    if (i > 0 && ex.linkAbove) groups[groups.length - 1].push(ex);
+    else groups.push([ex]);
+  });
+  return groups;
+}
+// Same idea for a session, but an exercise pulled out for today (solo) stands alone and
+// does not break the chain for the ones around it.
+function sessionGroups(items, solo) {
+  const groups = [];
+  let chain = null;
+  for (const it of items) {
+    const link = it.ex ? !!it.ex.linkAbove : !!it.e.linkAbove;
+    if (solo[it.id]) { groups.push({ members: [it], solo: true }); continue; }
+    if (link && chain) { chain.members.push(it); continue; }
+    chain = { members: [it], solo: false };
+    groups.push(chain);
+  }
+  return groups;
+}
+const groupLetter = n => String.fromCharCode(65 + (n % 26));
 function createBlock(name, copyFrom) {
   const block = { id: uid(), name, createdAt: Date.now(), days: [] };
   if (copyFrom) block.days = copyFrom.days.map(d => ({ id: uid(), name: d.name, exercises: d.exercises.map(clone) }));
@@ -379,24 +404,45 @@ function viewSession(app, id) {
   app.append(h('div', { class: 'row between session-meta' },
     h('button', { class: 'chip', onclick: () => changeDateSheet(s) }, fmtDate(s.date, { weekday: true })),
     prog));
+  const list = h('div');
+  app.append(list);
 
-  const defs = day ? day.exercises : [];
-  const orphans = Object.values(s.entries).filter(e => !defs.some(d => d.id === e.exerciseId) && entryLogged(e));
-  const total = defs.length + orphans.length;
+  let total = 0;
   const updateProgress = () => { prog.textContent = `${Object.values(s.entries).filter(entryLogged).length}/${total} logged`; };
-
-  if (!total) app.append(h('p', { class: 'muted center' }, 'No exercises in this day yet. Add some in Program.'));
-  for (const ex of defs) {
-    let e = s.entries[ex.id];
-    // Untouched entries are rebuilt each time so they always reflect the latest "last time".
-    if (!e || !entryLogged(e)) e = s.entries[ex.id] = newEntry(ex, s);
-    app.append(exerciseCard(s, e, ex, updateProgress));
-  }
-  for (const e of orphans) app.append(exerciseCard(s, e, null, updateProgress));
-  save();
-  updateProgress();
+  // Rebuilds the exercise cards in place (no scroll jump), e.g. after pulling one out of a superset.
+  const buildList = () => {
+    clear(list);
+    const defs = day ? day.exercises : [];
+    const items = [];
+    for (const ex of defs) {
+      let e = s.entries[ex.id];
+      // Untouched entries are rebuilt each time so they always reflect the latest "last time".
+      if (!e || !entryLogged(e)) e = s.entries[ex.id] = newEntry(ex, s);
+      items.push({ id: ex.id, ex, e });
+    }
+    for (const e of Object.values(s.entries)) {
+      if (!defs.some(d => d.id === e.exerciseId) && entryLogged(e)) items.push({ id: e.exerciseId, ex: null, e });
+    }
+    total = items.length;
+    if (!total) list.append(h('p', { class: 'muted center' }, 'No exercises in this day yet. Add some in Program.'));
+    const solo = s.solo || {};
+    let letter = 0;
+    for (const g of sessionGroups(items, solo)) {
+      if (g.members.length > 1) {
+        const L = groupLetter(letter++);
+        g.members.forEach((m, i) => { m.label = `${L}${i + 1}`; });
+        list.append(supersetCard(s, g.members, updateProgress, buildList));
+      } else {
+        const m = g.members[0];
+        list.append(exerciseCard(s, m.e, m.ex, updateProgress, g.solo ? () => { delete s.solo[m.id]; save(); buildList(); } : null));
+      }
+    }
+    save();
+    updateProgress();
+  };
+  buildList();
 }
-function exerciseCard(s, e, ex, onChange) {
+function exerciseCard(s, e, ex, onChange, onRejoin) {
   const wrap = h('div');
   let open = !e.done;
   const mark = () => { e.touched = true; save(); onChange(); };
@@ -408,6 +454,7 @@ function exerciseCard(s, e, ex, onChange) {
     card.append(h('div', { class: 'ex-head', onclick: () => { if (e.done) { open = !open; build(); } } },
       h('div', { class: 'ex-title' }, h('div', { class: 'ex-name' }, e.name), ex && ex.note ? h('div', { class: 'ex-sticky' }, ex.note) : null),
       check));
+    if (onRejoin) card.append(h('div', { class: 'solo-note' }, h('span', { class: 'muted' }, 'On its own today · '), h('button', { class: 'linkbtn', onclick: onRejoin }, 'Rejoin superset')));
     if (!open) {
       card.append(h('div', { class: 'ex-summary' }, fmtSets(e) || '—'));
       if (e.note) card.append(h('div', { class: 'muted small' }, e.note));
@@ -428,7 +475,7 @@ function exerciseCard(s, e, ex, onChange) {
         e.type !== 'time' ? [h('span', { class: 'x' }), h('span', { class: 'col' }, 'reps')] : null));
       e.sets.forEach((st, i) => setsEl.append(setRow(e, st, i, mark)));
       setsEl.append(h('div', { class: 'set-actions' },
-        h('button', { class: 'btn ghost small', onclick: () => { const prev = e.sets[e.sets.length - 1]; e.sets.push(prev ? { ...prev } : { w: null, r: null, s: null, band: null }); mark(); renderSets(); } }, '+ Set'),
+        h('button', { class: 'btn ghost small', onclick: () => { const prev = e.sets[e.sets.length - 1]; e.sets.push(prev ? { ...prev } : emptySet()); mark(); renderSets(); } }, '+ Set'),
         e.sets.length > 1 ? h('button', { class: 'btn ghost small', onclick: () => { e.sets.pop(); mark(); renderSets(); } }, '− Set') : null));
     };
     renderSets();
@@ -446,13 +493,89 @@ function exerciseCard(s, e, ex, onChange) {
   build();
   return wrap;
 }
-function setRow(e, st, i, mark) {
-  const row = h('div', { class: 'setrow' }, h('span', { class: 'n' }, i + 1));
+function setRow(e, st, i, mark, label) {
+  const row = h('div', { class: 'setrow' }, h('span', { class: 'n' }, label || (i + 1)));
   if (e.type === 'band') row.append(bandSelect(st, mark));
   else if (e.type === 'time') row.append(stepper(st, 's', data.settings.timeStep, mark, 'numeric'));
   else row.append(stepper(st, 'w', data.settings.weightStep, mark, 'decimal'));
   if (e.type !== 'time') row.append(h('span', { class: 'x' }, '×'), stepper(st, 'r', data.settings.repStep, mark, 'numeric'));
   return row;
+}
+// One card for a superset: member headers, then the sets interleaved round by round.
+function supersetCard(s, members, onChange, onLayoutChange) {
+  const wrap = h('div');
+  const allDone = () => members.every(m => m.e.done);
+  let open = !allDone();
+  const mark = e => { e.touched = true; save(); onChange(); };
+  const typeHint = t => t === 'time' ? 'sec' : t === 'band' ? 'band × reps' : t === 'bw' ? 'BW + lb × reps' : 'lb × reps';
+  const pullOutMenu = () => menuSheet(members.map(m => ({
+    label: `Do ${m.e.name} on its own today`,
+    action: () => { s.solo = s.solo || {}; s.solo[m.id] = true; save(); onLayoutChange(); },
+  })), 'Pull out of superset');
+  const build = () => {
+    clear(wrap);
+    const card = h('div', { class: 'card ex ss' + (allDone() ? ' is-done' : '') });
+    card.append(h('div', { class: 'ss-head', onclick: () => { if (allDone()) { open = !open; build(); } } },
+      h('span', { class: 'ss-label' }, 'Superset'),
+      h('button', { class: 'btn icon ghost small', 'aria-label': 'Superset options', onclick: ev => { ev.stopPropagation(); pullOutMenu(); } }, svgIcon(ICON.dots, 20, 3))));
+    for (const m of members) {
+      const e = m.e;
+      const check = h('button', { class: 'check' + (e.done ? ' on' : ''), 'aria-label': `Mark ${e.name} done`, 'aria-pressed': String(e.done),
+        onclick: ev => { ev.stopPropagation(); e.done = !e.done; save(); onChange(); open = !allDone(); build(); } }, svgIcon(ICON.check, 18, 3));
+      card.append(h('div', { class: 'ss-member' + (e.done ? ' is-done' : '') },
+        h('span', { class: 'tag' }, m.label),
+        h('div', { class: 'ex-title' },
+          h('div', { class: 'ex-name' }, e.name, h('span', { class: 'muted small hint' }, ` · ${typeHint(e.type)}`)),
+          m.ex && m.ex.note ? h('div', { class: 'ex-sticky' }, m.ex.note) : null),
+        check));
+      if (!open) {
+        card.append(h('div', { class: 'ex-summary ss-indent' }, fmtSets(e) || '—'));
+        if (e.note) card.append(h('div', { class: 'muted small ss-indent' }, e.note));
+        continue;
+      }
+      const last = lastPerformance(e.nameKey, s);
+      card.append(last
+        ? h('button', { class: 'last ss-indent', onclick: () => go(`/exercise/${encodeURIComponent(e.nameKey)}`) },
+            h('span', { class: 'muted' }, `Last · ${fmtDate(last.session.date)} · `), fmtSets(last.entry), svgIcon(ICON.chevron, 14))
+        : h('div', { class: 'last muted ss-indent' }, 'First time — no previous numbers'));
+    }
+    if (!open) { wrap.append(card); return; }
+
+    const roundsEl = h('div', { class: 'sets' });
+    const renderRounds = () => {
+      clear(roundsEl);
+      const n = Math.max(...members.map(m => m.e.sets.length));
+      for (let r = 0; r < n; r++) {
+        roundsEl.append(h('div', { class: 'round-label' }, `Round ${r + 1}`));
+        for (const m of members) if (m.e.sets[r]) roundsEl.append(setRow(m.e, m.e.sets[r], r, () => mark(m.e), m.label));
+      }
+      roundsEl.append(h('div', { class: 'set-actions' },
+        h('button', { class: 'btn ghost small', onclick: () => {
+          for (const m of members) { const prev = m.e.sets[m.e.sets.length - 1]; m.e.sets.push(prev ? { ...prev } : emptySet()); mark(m.e); }
+          renderRounds();
+        } }, '+ Round'),
+        n > 1 ? h('button', { class: 'btn ghost small', onclick: () => {
+          for (const m of members) if (m.e.sets.length === n) { m.e.sets.pop(); mark(m.e); }
+          renderRounds();
+        } }, '− Round') : null));
+    };
+    renderRounds();
+    card.append(roundsEl);
+
+    for (const m of members) {
+      const e = m.e;
+      const note = h('textarea', { class: 'input note', rows: 1, placeholder: `Note · ${e.name} (optional)`, value: e.note || '' });
+      const grow = () => { note.style.height = 'auto'; note.style.height = note.scrollHeight + 'px'; };
+      note.addEventListener('input', () => { e.note = note.value; mark(e); grow(); });
+      card.append(note);
+      requestAnimationFrame(grow);
+      const notes = pastNotes(e.nameKey, s, data.settings.notesShown);
+      if (notes.length) card.append(h('div', { class: 'pnotes' }, notes.map(n => h('div', { class: 'pnote' }, h('span', { class: 'muted' }, `${fmtDate(n.date)} · ${e.name} · `), n.note))));
+    }
+    wrap.append(card);
+  };
+  build();
+  return wrap;
 }
 function bandSelect(st, mark) {
   const bands = [...data.settings.bands];
@@ -505,10 +628,17 @@ function viewProgram(app) {
       h('div', { class: 'day-name' }, day.name),
       h('button', { class: 'btn icon ghost', 'aria-label': 'Day options', onclick: () => dayMenu(block, day) }, svgIcon(ICON.dots, 22, 3))));
     if (!day.exercises.length) card.append(h('div', { class: 'muted small pad' }, 'No exercises yet.'));
-    for (const ex of day.exercises) card.append(h('button', { class: 'exrow', onclick: () => exerciseForm(block, day, ex) },
+    const exRow = (ex, label) => h('button', { class: 'exrow', onclick: () => exerciseForm(block, day, ex) },
+      label ? h('span', { class: 'tag' }, label) : null,
       h('div', { class: 'exrow-main' }, h('div', { class: 'exrow-name' }, ex.name), ex.note ? h('div', { class: 'muted small' }, ex.note) : null),
       h('div', { class: 'muted small nowrap' }, `${plural(ex.sets, 'set')} · ${TYPE_SHORT[ex.type] || ex.type}`),
-      svgIcon(ICON.chevron, 16)));
+      svgIcon(ICON.chevron, 16));
+    let letter = 0;
+    for (const g of dayGroups(day.exercises)) {
+      if (g.length === 1) { card.append(exRow(g[0], null)); continue; }
+      const L = groupLetter(letter++);
+      card.append(h('div', { class: 'ss-box' }, h('div', { class: 'ss-caption' }, `Superset ${L}`), g.map((ex, i) => exRow(ex, `${L}${i + 1}`))));
+    }
     card.append(h('button', { class: 'btn ghost full', onclick: () => exerciseForm(block, day, null) }, '+ Add exercise'));
     app.append(card);
   }
@@ -577,8 +707,11 @@ function switchBlockSheet() {
 }
 function exerciseForm(block, day, ex) {
   const editing = !!ex;
-  const model = ex ? clone(ex) : { id: uid(), name: '', type: 'lb', sets: 3, note: '' };
+  const model = ex ? clone(ex) : { id: uid(), name: '', type: 'lb', sets: 3, note: '', linkAbove: false };
   const known = knownExercises();
+  const idx = editing ? day.exercises.indexOf(ex) : day.exercises.length;
+  const above = idx > 0 ? day.exercises[idx - 1] : null;
+  const linkChk = h('input', { type: 'checkbox', checked: !!(above && model.linkAbove) });
 
   const nameIn = h('input', { class: 'input', type: 'text', placeholder: 'e.g. Incline DB Press', value: model.name, autocomplete: 'off', autocapitalize: 'words' });
   const sugg = h('div', { class: 'suggest', hidden: true });
@@ -608,6 +741,7 @@ function exerciseForm(block, day, ex) {
     model.name = name;
     model.note = noteIn.value.trim();
     model.sets = Math.max(1, Math.min(20, Math.round(model.sets || 1)));
+    model.linkAbove = !!(above && linkChk.checked);
     if (editing) {
       const oldKey = nameKey(ex.name), newKey = nameKey(name);
       if (oldKey !== newKey) {
@@ -630,7 +764,6 @@ function exerciseForm(block, day, ex) {
 
   const actions = [h('button', { class: 'btn full primary', onclick: onSave }, editing ? 'Save' : 'Add exercise')];
   if (editing) {
-    const idx = day.exercises.indexOf(ex);
     actions.push(h('div', { class: 'row gap' },
       h('button', { class: 'btn', disabled: idx === 0, onclick: () => { move(day.exercises, idx, idx - 1); save(); closeSheet(); render(); } }, '↑ Move up'),
       h('button', { class: 'btn', disabled: idx === day.exercises.length - 1, onclick: () => { move(day.exercises, idx, idx + 1); save(); closeSheet(); render(); } }, '↓ Move down')));
@@ -646,6 +779,7 @@ function exerciseForm(block, day, ex) {
     h('div', { class: 'field' }, h('span', {}, 'Type'), seg),
     h('div', { class: 'field' }, h('span', {}, 'Sets'), setsStep),
     h('label', { class: 'field' }, h('span', {}, 'Sticky note'), noteIn),
+    above ? h('label', { class: 'checkrow' }, linkChk, h('span', {}, 'Superset with ', h('b', {}, above.name), h('span', { class: 'muted small' }, ' (done together, round by round)'))) : null,
     h('div', { class: 'sheet-actions' }, actions),
   ]);
   if (!editing) nameIn.focus();

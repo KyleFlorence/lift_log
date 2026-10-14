@@ -7,6 +7,7 @@ A deliberately small workout tracker that runs as a home-screen web app on a pho
 - **Per-set tracking.** 3 sets of 8 are recorded as 8, 8, 8, so you can improve one set or all of them.
 - **Notes that come back.** A note you leave today shows up under the exercise next time (the last 3 by default). Each exercise can also carry a sticky note such as "seat 4, wide grip".
 - **Load types.** Weight (lb) is the default. Bodyweight (+ added lb), band (pick from your own list), and timed (seconds) are one tap away when adding an exercise.
+- **Supersets.** When adding or editing an exercise, turn on "Superset with <the exercise above>". Linked exercises show as one bracketed card (A1, A2, A3) with the sets interleaved round by round. If you want to give one of them dedicated attention on a given day, the card's menu has "Do X on its own today", and the pulled-out card has a "Rejoin superset" link. That choice only affects that session.
 - **Check off** exercises as you go. Done exercises collapse to a one-line summary.
 - **History** by session and by exercise. Sessions can be re-dated if you forgot to log one.
 - **Dark mode** follows the phone, with a manual override in Settings.
@@ -61,8 +62,10 @@ No build step and no dependencies.
 
 One JSON object in `localStorage` under the key `liftlog.v1`:
 
-- `blocks[]`: `{ id, name, createdAt, days[] }` where each day is `{ id, name, exercises[] }` and each exercise is `{ id, name, type, sets, note }`. `type` is `lb`, `bw`, `band`, or `time`.
-- `sessions[]`: one per day per date: `{ id, blockId, dayId, date, createdAt, entries }`. Each entry records the exercise name, type, `sets[]` of `{ w, r, s, band }`, a note, a done flag, and a touched flag.
+- `blocks[]`: `{ id, name, createdAt, days[] }` where each day is `{ id, name, exercises[] }` and each exercise is `{ id, name, type, sets, note, linkAbove }`. `type` is `lb`, `bw`, `band`, or `time`. `linkAbove: true` makes the exercise a superset with the one above it; consecutive links form one group.
+- `sessions[]`: one per day per date: `{ id, blockId, dayId, date, createdAt, entries, solo }`. Each entry records the exercise name, type, `sets[]` of `{ w, r, s, band }`, a note, a done flag, and a touched flag. `solo` lists exercise ids pulled out of their superset for that session only.
+
+Changes to the app only ever add fields; old data loads unchanged because missing fields get defaults.
 - `settings`: step sizes, number of past notes shown, theme, band names.
 
 "Last time" is found by exercise name, case-insensitive, across all blocks. Renaming an exercise in the program offers to rename its past entries too. A session where nothing was edited or checked is discarded automatically, so opening a day by accident leaves no trace.

@@ -1,6 +1,6 @@
 /* Lift Log service worker: network first, cache fallback, so the app opens offline
    but always picks up new versions when online. Bump CACHE when changing the asset list. */
-const CACHE = 'liftlog-v1';
+const CACHE = 'liftlog-v2';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
