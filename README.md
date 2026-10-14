@@ -13,9 +13,11 @@ A deliberately small workout tracker that runs as a home-screen web app on a pho
 
 Data lives only in the phone's browser storage. There is no account and no server. Settings has export and import for backups.
 
+Live at **https://kyleflorence.github.io/lift_log/** (source: https://github.com/KyleFlorence/lift_log).
+
 ## Use it on an iPhone
 
-1. Open the hosted URL in Safari.
+1. Open https://kyleflorence.github.io/lift_log/ in Safari.
 2. Tap Share, then **Add to Home Screen**.
 3. Open it from the home screen. It runs full-screen and works offline.
 
@@ -27,18 +29,10 @@ Friends can use the same URL. Each phone keeps its own data.
 
 The repo only contains code, so a public repo exposes nothing personal.
 
-1. Create an empty repo on GitHub (for example `workout-tracker`).
-2. Push this folder to it:
+1. In the repo on GitHub: **Settings → Pages → Build and deployment**. Set Source to "Deploy from a branch", pick `main` and `/ (root)`, and save.
+2. After a minute the app is live at `https://kyleflorence.github.io/lift_log/`.
 
-   ```bash
-   git remote add origin https://github.com/<you>/workout-tracker.git
-   git push -u origin main
-   ```
-
-3. In the repo on GitHub: **Settings → Pages → Build and deployment**. Set Source to "Deploy from a branch", pick `main` and `/ (root)`, and save.
-4. After a minute the app is live at `https://<you>.github.io/workout-tracker/`.
-
-Every later push to `main` redeploys automatically. Netlify or Cloudflare Pages work the same way if you prefer a private repo.
+Every later push to `main` redeploys automatically. If you fork this for yourself, the URL becomes `https://<you>.github.io/<repo>/`; nothing in the code needs to change because all paths are relative.
 
 ## Run locally
 
